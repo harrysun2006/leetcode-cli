@@ -65,6 +65,8 @@
   },
   "devDependencies": {
     "chai": "4.2.0",
+    "electron": "^29.1.1",
+    "electron-rebuild": "^3.2.9",
     "eslint": "5.9.0",
     "eslint-config-google": "0.11.0",
     "mocha": "^8.3.2",

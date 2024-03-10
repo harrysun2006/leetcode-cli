@@ -48,3 +48,6 @@ Great thanks to leetcode.com, a really awesome website!
 	Coding it!
 	Run test(s) and pray...                   $ leetcode test ./two-sum.cpp -t '[3,2,4]\n7'
 	Submit final solution!                    $ leetcode submit ./two-sum.cpp
+
+## Bypass CloudFlare
+Please refer to [Bypass CloudFlare](./cfx.md) for how we use [curl-impersonate](https://github.com/lwthiker/curl-impersonate) based solution to bypass CloudFlare.
