@@ -51,10 +51,12 @@
   "dependencies": {
     "ansi-styles": "3.2.1",
     "cheerio": "0.20.0",
+    "global": "^4.4.0",
     "he": "1.2.0",
     "mkdirp": "^1.0.4",
     "moment": "^2.29.1",
     "nconf": "^0.11.2",
+    "node-libcurl": "^4.0.0",
     "ora": "3.0.0",
     "prompt": "1.0.0",
     "request": "2.88.0",
@@ -65,7 +67,7 @@
   },
   "devDependencies": {
     "chai": "4.2.0",
-    "electron": "^29.1.1",
+    "electron": "27.3.6",
     "electron-rebuild": "^3.2.9",
     "eslint": "5.9.0",
     "eslint-config-google": "0.11.0",

@@ -22,19 +22,6 @@ After many tests, the proxy based solutions (naive, FlairSolverr) don't really w
 * rewrite leetcode-cli to replace request with modified node-libcurl
 * update the vscode leetcode plugin(extension) to use the enhanced leetcode-cli plugin
 
-Finally, we use the curl_chrome116 command line + exec as the solution, because the NODE_MODULE_VERSION incompatibility issue in vscode. The vscode itself is built by electron, but we build the modified version of node-libcurl with node (18.12.0). Although in vscode leetcode extension, it spawns a separate node process (18.12.0) to run the underlying leetcode commands, we still got the NODE_MODULE_VERSION error.
-
-```
-const childProc = wsl.useWsl()
-    ? cp.spawn("wsl", [leetCodeExecutor_1.leetCodeExecutor.node, leetCodeBinaryPath, "user", commandArg], { shell: true })
-    : cp.spawn(leetCodeExecutor_1.leetCodeExecutor.node, [leetCodeBinaryPath, "user", commandArg], {
-        shell: true,
-        env: cpUtils_1.createEnvOption(),
-    });
-
-this.executeCommandEx(this.nodeExecutable, [yield this.getLeetCodeBinaryPath(), "plugin", "-e", plugin]);
-```
-
 ### Install curl-impersonate
 Refer to [INSTALL.md](https://github.com/lwthiker/curl-impersonate/blob/main/INSTALL.md#macos)
 + install prebuild binary through brew
@@ -71,10 +58,146 @@ cd ../ && rm -Rf build
 
 ### Compile node-libcurl with curl-impersonate
 Build node-libcurl from source on macOS
-```
 
+#### Option 1: node-libcurl (using lib/util2.js)
+build node-libcurl from source in two versions, one version is using node 18.12.0 (match to the version in vscode leetcode extension settings), the other one is using electron 27.3.6 (match to the vscode based electron version). copy two versions to different locations, and we won't hit the NODE_MODULE_VERSION incompatibility error!
+```
 # install the build tool node-gyp
 npm i -g node-pre-gyp node-gyp 
+
+# install electron 27.3.6, check https://releases.electronjs.org/ for electron versions
+# we need NODE_MODULE_VERSION 118 corresponded electron version
+npm i -g electron@v27.3.6
+
+# verify the electron version
+➜ electron -v
+v27.3.6
+
+# copy /usr/bin/curl-config to /usr/local/bin/curl-config
+# and make sure /usr/local/bin is before /usr/bin in PATH
+# then modify /usr/local/bin/curl-config and update prefix from /usr to /usr/local/opt/curl
+# to avoid clang: error: no such file or directory: '/usr/include'
+cp /usr/bin/curl-config /usr/local/bin/curl-config
+
+# build electron version(NODE_MODULE_VERSION 118) node-libcurl
+HOME=~/.electron-gyp npm_config_runtime=electron npm_config_target=27.3.6 npm_config_target_arch=x64 npm_config_arch=x64 npm_config_build_from_source=true npm_config_disturl=https://www.electronjs.org/headers yarn add node-libcurl
+# check node_libcurl.node
+➜ ll node_modules/node-libcurl/lib/binding/node_libcurl.node
+➜ otool -L node_modules/node-libcurl/lib/binding/node_libcurl.node
+node_modules/node-libcurl/lib/binding/node_libcurl.node:
+	@rpath/libcurl.dylib (compatibility version 13.0.0, current version 13.0.0)
+	/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1600.157.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)
+
+# verify the libcurl (using node will get NODE_MODULE_VERSION incompatible error)
+electron curl/lc.js
+
+# copy node-libcurl to vscode leetcode extension
+cp -a node_modules/node-libcurl ~/.vscode/extensions/leetcode.vscode-leetcode-0.18.1/node_modules/
+
+# build node version(NODE_MODULE_VERSION 108) node-libcurl
+npm_config_build_from_source=true yarn add node-libcurl
+
+# check node_libcurl.node
+➜ ll node_modules/node-libcurl/lib/binding/node_libcurl.node
+➜ otool -L node_modules/node-libcurl/lib/binding/node_libcurl.node
+node_modules/node-libcurl/lib/binding/node_libcurl.node:
+	@rpath/libcurl.dylib (compatibility version 13.0.0, current version 13.0.0)
+	/usr/lib/libc++.1.dylib (compatibility version 1.0.0, current version 1600.157.0)
+	/usr/lib/libSystem.B.dylib (compatibility version 1.0.0, current version 1336.61.1)
+
+# verify the libcurl
+node curl/lc.js
+./lc show 164 -x
+
+# copy node-libcurl to the embedded leetcode of vscode leetcode extension
+# ignore this if using symbolic link
+cp -a node_modules/node-libcurl ~/.vscode/extensions/leetcode.vscode-leetcode-0.18.1/node_modules/vsc-leetcode-cli/node_modules/
+# or do a link, replace ~/test/leetcode-cli with your leetcode-cli working directory
+cd ~/.vscode/extensions/leetcode.vscode-leetcode-0.18.1/node_modules
+mv vsc-leetcode-cli vsc-leetcode-clix
+ln -s ~/test/leetcode-cli vsc-leetcode-cli
+
+# DONE! Goto vscode and reload the window, the leetcode extension should work now!
+```
+
+#### Option 2: exec + curl_chrome116 (using lib/util1.js)
+Alternatively, we can use exec to execute curl_chrome116 to avoid below NODE_MODULE_VERSION compatibility issue for native build lib like node-libcurl! Follow the steps in [Option 1](#option-1-node-libcurl-using-libutil2js) except those related to electron!
+```
+Failed to list problems: Error: The module '/Users/harry/.vscode/extensions/leetcode.vscode-leetcode-0.18.1/node_modules/vsc-leetcode-cli/node_modules/node-libcurl/lib/binding/node_libcurl.node' was compiled against a different Node.js version using NODE_MODULE_VERSION 108. This version of Node.js requires NODE_MODULE_VERSION 118. Please try re-compiling or re-installing the module (for instance, using `npm rebuild` or `npm install`)..
+```
+
+### Test Conclusion
+| Not working | Working     |
+| ----------- | ----------- |
+| original node-libcurl   | curl-impersonate              |
+| naive proxy             | node exec + curl-impersonate  |
+|                         | modified node-libcurl					|
+
+### TODO
+
+### Update the vscode leetcode extension
+See the manual steps of copying, linking folders in [Option 1](#option-1-node-libcurl-using-libutil2js)
+
+### References
+- [Could not login with both 'leetcode user -l' and 'leetcode user -c'](https://github.com/skygragon/leetcode-cli/issues/218)
+- [Cannot login with premium account](https://github.com/skygragon/leetcode-cli/issues/194)
+- [Failed to log in with a leetcode.com account](https://github.com/LeetCode-OpenSource/vscode-leetcode/issues/478), [a comment](https://github.com/LeetCode-OpenSource/vscode-leetcode/issues/478#issuecomment-564757098)
+- Proxy Server to bypass Cloudflare: [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr), [naiveproxy](https://github.com/klzgrad/naiveproxy)
+- [How To Bypass Cloudflare in 2024](https://scrapeops.io/web-scraping-playbook/how-to-bypass-cloudflare/)
+- [How to Bypass Cloudflare in 2024: The 8 Best Methods](https://www.zenrows.com/blog/bypass-cloudflare)
+- [How to bypass Cloudflare when web scraping in 2024](https://scrapfly.io/blog/how-to-bypass-cloudflare-anti-scraping/)
+- [node abi versions](https://github.com/nodejs/node/blob/main/doc/abi_version_registry.json)
+- https://github.com/lwthiker/curl-impersonate
+- https://github.com/lwthiker/curl-impersonate#libcurl-impersonate
+- https://github.com/lwthiker/curl-impersonate/issues/80#issuecomment-1166192854
+- https://github.com/JCMais/node-libcurl?tab=readme-ov-file#building-on-macos
+- https://www.electronjs.org/docs/latest/tutorial/using-native-node-modules
+- build node-libcurl [with electron](https://github.com/JCMais/node-libcurl?tab=readme-ov-file#electron-aka-atom-shell)
+
+### Questions ?
+- How does macOS load /usr/lib/libcurl.4.dylib (8.4.0) or @rpath/libcurl.dylib (8.1.1) at runtime?
+```
+# otool -L node_modules/node-libcurl/lib/binding/node_libcurl.node
+shows libcurl.4.dylib is linked (but /usr/lib/libcurl.4.dylib doesn't exist!!) ?
+
+node_modules/node-libcurl/lib/binding/node_libcurl.node:
+	/usr/lib/libcurl.4.dylib (compatibility version 7.0.0, current version 9.0.0)
+
+node_modules/node-libcurl/lib/binding/node_libcurl.node:
+	@rpath/libcurl.dylib (compatibility version 13.0.0, current version 13.0.0)
+
+# DYLD_PRINT_LIBRARIES=1 node curl/lc.js
+for new build approach (curl-config), node-libcurl (8.1.1)
+... ...
+dyld[3203]: <0124D559-13AB-354E-836D-A0560B3F4FC2> /Users/harry/test/leetcode-cli/node_modules/node-libcurl/lib/binding/node_libcurl.node
+dyld[3203]: <7825CF7A-09D9-32D9-8FA7-704D0B71BF92> /usr/local/Cellar/curl-impersonate/0.6.0-alpha.1/lib/libcurl-impersonate-chrome.4.dylib
+... ...
+
+for old build approach (node_libcurl.target.mk), node-libcurl (8.4.0)
+... ...
+dyld[69574]: <4528259C-8493-3A0C-8B35-F29E87F59EED> /Users/harry/test/leetcode-cli/node_modules/node-libcurl/lib/binding/node_libcurl.node
+dyld[69574]: <90815EBD-89C8-33E7-8B86-5A024176BC15> /usr/lib/libcurl.4.dylib
+... ...
+looks like macOS does some magic when loading /usr/lib/libcurl.4.dylib (in memory or cache?)
+```
+- The leetcode extension is not always running in separate process space from vscode itself
+
+The vscode itself is built with electron, but the modified version of node-libcurl was built with node (18.12.0). Although in vscode leetcode extension, node 18.12.0 is nominated as the node.js executable path and the extension does spawn a separate node process to run the underlying leetcode commands, we still got the NODE_MODULE_VERSION incompatible error.
+```
+const childProc = wsl.useWsl()
+    ? cp.spawn("wsl", [leetCodeExecutor_1.leetCodeExecutor.node, leetCodeBinaryPath, "user", commandArg], { shell: true })
+    : cp.spawn(leetCodeExecutor_1.leetCodeExecutor.node, [leetCodeBinaryPath, "user", commandArg], {
+        shell: true,
+        env: cpUtils_1.createEnvOption(),
+    });
+
+this.executeCommandEx(this.nodeExecutable, [yield this.getLeetCodeBinaryPath(), "plugin", "-e", plugin]);
+```
+- Will different install locations for the node-libcurl module (e.g. as one of the node 18.12.0 global modules) fix the NODE_MODULE_VERSION incompatible issue?
+
+### Archived notes
+```
 # build & install node-libcurl from source, first time (to generate build files)
 # npm_config_build_from_source=true npm i node-libcurl
 # use yarn as npm doesn't create build folders and make files!
@@ -125,55 +248,7 @@ node curl/lc.js
 # run test, it works!
 node curl/lc.js
 
-### questions ???
-# otool -L node_modules/node-libcurl/lib/binding/node_libcurl.node
-to find out which libcurl.4.dylib is loaded (as /usr/lib/libcurl.4.dylib doesn't exist!) ?
-otool
-lib/binding/node_libcurl.node:
-	/usr/lib/libcurl.4.dylib (compatibility version 7.0.0, current version 9.0.0)
-
-# DYLD_PRINT_LIBRARIES=1 node curl/lc.js
-... ...
-dyld[69574]: <4528259C-8493-3A0C-8B35-F29E87F59EED> /Users/harry/test/leetcode-cli/node_modules/node-libcurl/lib/binding/node_libcurl.node
-dyld[69574]: <90815EBD-89C8-33E7-8B86-5A024176BC15> /usr/lib/libcurl.4.dylib
-... ...
-looks like macOS has some special mapping when loading /usr/lib/libcurl.4.dylib (in memory or cache?)
-
-# references
-# https://github.com/lwthiker/curl-impersonate
-# https://github.com/lwthiker/curl-impersonate#libcurl-impersonate
-# https://github.com/lwthiker/curl-impersonate/issues/80#issuecomment-1166192854
-# https://github.com/JCMais/node-libcurl?tab=readme-ov-file#building-on-macos
-```
-
-### Test Conclusion
-| Not working | Working     |
-| ----------- | ----------- |
-| original node-libcurl   | curl-impersonate              |
-| naive proxy             | node exec + curl-impersonate  |
-|                         | modified node-libcurl					|
-
-### TODO
-- Fix the NODE_MODULE_VERSION error by building node-libcurl [with electron](https://github.com/JCMais/node-libcurl?tab=readme-ov-file#electron-aka-atom-shell)
-```
-Failed to list problems: Error: The module '/Users/harry/.vscode/extensions/leetcode.vscode-leetcode-0.18.1/node_modules/vsc-leetcode-cli/node_modules/node-libcurl/lib/binding/node_libcurl.node' was compiled against a different Node.js version using NODE_MODULE_VERSION 108. This version of Node.js requires NODE_MODULE_VERSION 118. Please try re-compiling or re-installing the module (for instance, using `npm rebuild` or `npm install`)..
-```
-- Try different install locations for the node-libcurl
-
-### Update the vscode leetcode extension
-
-### References
-- [Could not login with both 'leetcode user -l' and 'leetcode user -c'](https://github.com/skygragon/leetcode-cli/issues/218)
-- [Cannot login with premium account](https://github.com/skygragon/leetcode-cli/issues/194)
-- [Failed to log in with a leetcode.com account](https://github.com/LeetCode-OpenSource/vscode-leetcode/issues/478), [a comment](https://github.com/LeetCode-OpenSource/vscode-leetcode/issues/478#issuecomment-564757098)
-- Proxy Server to bypass Cloudflare: [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr), [naiveproxy](https://github.com/klzgrad/naiveproxy)
-- [How To Bypass Cloudflare in 2024](https://scrapeops.io/web-scraping-playbook/how-to-bypass-cloudflare/)
-- [How to Bypass Cloudflare in 2024: The 8 Best Methods](https://www.zenrows.com/blog/bypass-cloudflare)
-- [How to bypass Cloudflare when web scraping in 2024](https://scrapfly.io/blog/how-to-bypass-cloudflare-anti-scraping/)
-- [node abi versions](https://github.com/nodejs/node/blob/main/doc/abi_version_registry.json)
-
-### Archived notes
-```
+# ------------------------------------
 # node-gyp related files:
 ~/Library/Caches/node-gyp/20.11.1/include/node/common.gypi
 ~/Library/Caches/node-gyp/20.11.1/include/node/config.gypi
